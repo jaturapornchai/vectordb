@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  # Ollama Service
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - vectordb-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+networks:
+  vectordb-network:
+    driver: bridge
+
+volumes:
+  ollama-data:
+    driver: local
