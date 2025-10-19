@@ -21,7 +21,7 @@ type Config struct {
 
 func loadConfig() *Config {
 	if err := godotenv.Load(); err != nil {
-		log.Println("คำเตือน: ไม่พบไฟล์ .env")
+		log.Println("คำเตือน: ไม่พบไฟล์ .env:", err)
 	}
 
 	return &Config{
@@ -31,7 +31,7 @@ func loadConfig() *Config {
 		DBPassword:     getEnv("DB_PASSWORD", ""),
 		DBName:         getEnv("DB_NAME", "testvector"),
 		OllamaHost:     getEnv("OLLAMA_HOST", "http://localhost:11434"),
-		OllamaModel:    getEnv("OLLAMA_MODEL", "bge-m3:latest"),
+		OllamaModel:    getEnv("OLLAMA_MODEL", "bge-m3"),
 		GeminiAPIKey:   getEnv("GEMINI_API_KEY", ""),
 		DeepSeekAPIKey: getEnv("DEEPSEEK_API_KEY", ""),
 	}

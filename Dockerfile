@@ -34,15 +34,8 @@ COPY doc/ /app/doc/
 # Copy .env file if exists
 COPY .env* ./
 
-# Set environment variables with defaults
-ENV DB_HOST=103.13.30.32
-ENV DB_PORT=5434
-ENV DB_USER=chatbot
-ENV DB_PASSWORD=chatbot123
-ENV DB_NAME=testvector
-ENV OLLAMA_HOST=http://host.docker.internal:11434
-ENV OLLAMA_MODEL=bge-m3:latest
-ENV PORT=8080
+# Note: Environment variables are loaded from .env file at runtime
+# Defaults are handled in config.go
 
 # Expose port for API
 EXPOSE 8080
