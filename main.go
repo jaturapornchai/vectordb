@@ -14,6 +14,12 @@ func main() {
 	log.Println("🚀 เริ่มต้น Simple Text Search API Server")
 	log.Println("📁 ค้นหาในโฟลเดอร์: ./doc")
 
+	// ✨ โหลด word segmentation library (mapkha)
+	if err := initWordSegmentation(); err != nil {
+		log.Printf("⚠️  ⚠️  Word Segmentation ไม่พร้อม: %v", err)
+		log.Println("    → ยังคงทำงานต่อได้ แต่ค้นหาจะไม่มี Thai word segmentation")
+	}
+
 	// Routes
 	http.HandleFunc("/health", healthHandlerSimple)
 	http.HandleFunc("/search", searchHandlerSimple)

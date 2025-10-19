@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // SearchRequest for text search
@@ -89,14 +90,29 @@ func searchHandlerSimple(w http.ResponseWriter, r *http.Request) {
 	// ค้นหาในโฟลเดอร์ doc/
 	docPath := "./doc"
 
-	// รวมผลลัพธ์จากทุกคำสำคัญ
+	// ⚡ ค้นหาทุกคำพร้อมกัน (Concurrent Search)
 	var allMatches []Match
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
 	for _, keyword := range keywords {
-		log.Printf("   🔎 ค้นหาคำ: '%s'", keyword)
-		matches := searchInDirectory(docPath, "", keyword, 3, 3) // 3 บรรทัดก่อน-หลัง
-		allMatches = append(allMatches, matches...)
-		log.Printf("      พบ %d ผลลัพธ์", len(matches))
+		wg.Add(1)
+		go func(kw string) {
+			defer wg.Done()
+
+			log.Printf("   🔎 ค้นหาคำ: '%s'", kw)
+			matches := searchInDirectory(docPath, "", kw, 3, 3) // 3 บรรทัดก่อน-หลัง
+
+			mu.Lock()
+			allMatches = append(allMatches, matches...)
+			mu.Unlock()
+
+			log.Printf("      พบ %d ผลลัพธ์", len(matches))
+		}(keyword)
 	}
+
+	// รอให้ทุก keyword ค้นหาเสร็จ
+	wg.Wait()
 
 	// ลบผลลัพธ์ซ้ำ
 	uniqueMatches := removeDuplicateMatches(allMatches)
@@ -120,7 +136,9 @@ func searchHandlerSimple(w http.ResponseWriter, r *http.Request) {
 	if req.UseSummary && len(uniqueMatches) > 0 {
 		log.Printf("🤖 กำลังสรุปผลด้วย AI...")
 		contextForAI := formatMatchesForAI(uniqueMatches, req.Query)
-		summary = summarizeResultsSimple(contextForAI, req.Query)
+		// ✨ เพิ่ม filename + line_number ให้ AI ได้ข้อมูลแหล่งที่มา
+		sourceInfo := buildSourceInfo(uniqueMatches)
+		summary = summarizeResultsSimple(contextForAI, req.Query, sourceInfo)
 		if summary != "" {
 			log.Printf("✅ สรุปด้วย AI สำเร็จ")
 		}
@@ -137,10 +155,34 @@ func searchHandlerSimple(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
+// buildSourceInfo สร้างข้อมูลแหล่งที่มา เพื่อให้ AI เหล่าว่ามาจากไหน
+func buildSourceInfo(matches []Match) string {
+	var builder strings.Builder
+	builder.WriteString("\n\n=== แหล่งที่มาของข้อมูล ===\n")
+
+	maxSources := 10
+	for i, match := range matches {
+		if i >= maxSources {
+			break
+		}
+		builder.WriteString(fmt.Sprintf("- ไฟล์: %s, บรรทัด: %d\n",
+			filepath.Base(match.Filename), match.LineNum))
+	}
+
+	if len(matches) > maxSources {
+		builder.WriteString(fmt.Sprintf("... และอีก %d แหล่งอื่น\n", len(matches)-maxSources))
+	}
+
+	return builder.String()
+}
+
 // summarizeResultsSimple calls AI to summarize search results
-func summarizeResultsSimple(context, query string) string {
+func summarizeResultsSimple(context, query, sourceInfo string) string {
+	// เพิ่มข้อมูลแหล่งที่มาให้ AI
+	fullContext := context + sourceInfo
+
 	// ลอง Gemini ก่อน
-	summary, err := summarizeWithGeminiText(cfg.GeminiAPIKey, context, query)
+	summary, err := summarizeWithGeminiText(cfg.GeminiAPIKey, fullContext, query)
 	if err == nil && summary != "" {
 		log.Printf("✅ ใช้ Gemini สรุปผลสำเร็จ")
 		return summary
@@ -149,7 +191,7 @@ func summarizeResultsSimple(context, query string) string {
 	log.Printf("⚠️  Gemini ล้มเหลว, ลอง DeepSeek...")
 
 	// ถ้า Gemini ล้มเหลว ลอง DeepSeek
-	summary, err = summarizeWithDeepSeekText(cfg.DeepSeekAPIKey, context, query)
+	summary, err = summarizeWithDeepSeekText(cfg.DeepSeekAPIKey, fullContext, query)
 	if err == nil && summary != "" {
 		log.Printf("✅ ใช้ DeepSeek สรุปผลสำเร็จ")
 		return summary

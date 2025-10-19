@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // Match represents a search result with context
@@ -56,20 +57,38 @@ func searchInFile(filename, searchWord string, beforeLines, afterLines int) []Ma
 // SearchInDirectory searches for a word in all markdown files in a directory
 func searchInDirectory(dirPath, shopID, searchWord string, beforeLines, afterLines int) []Match {
 	var allMatches []Match
+	var mu sync.Mutex
+	var wg sync.WaitGroup
 
-	// ค้นหาไฟล์ markdown ในโฟลเดอร์
+	// ค้นหาไฟล์ markdown ทั้งหมดก่อน
+	var mdFiles []string
 	filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil
 		}
-
-		// ตรวจสอบเฉพาะไฟล์ .md
 		if !info.IsDir() && strings.HasSuffix(strings.ToLower(path), ".md") {
-			matches := searchInFile(path, searchWord, beforeLines, afterLines)
-			allMatches = append(allMatches, matches...)
+			mdFiles = append(mdFiles, path)
 		}
 		return nil
 	})
+
+	// ค้นหาแต่ละไฟล์แบบ concurrent (พร้อมกัน)
+	for _, path := range mdFiles {
+		wg.Add(1)
+		go func(filePath string) {
+			defer wg.Done()
+
+			matches := searchInFile(filePath, searchWord, beforeLines, afterLines)
+
+			// ป้องกัน race condition ตอนเพิ่มผลลัพธ์
+			mu.Lock()
+			allMatches = append(allMatches, matches...)
+			mu.Unlock()
+		}(path)
+	}
+
+	// รอให้ทุก goroutine เสร็จ
+	wg.Wait()
 
 	return allMatches
 }

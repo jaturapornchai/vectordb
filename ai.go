@@ -8,31 +8,71 @@ import (
 	"net/http"
 )
 
-// Gemini API
+type GeminiRequest struct {
+	Contents []GeminiContent `json:"contents"`
+}
+
+type GeminiContent struct {
+	Parts []GeminiPart `json:"parts"`
+}
+
+type GeminiPart struct {
+	Text string `json:"text"`
+}
+
+type GeminiResponse struct {
+	Candidates []GeminiCandidate `json:"candidates"`
+}
+
+type GeminiCandidate struct {
+	Content GeminiContent `json:"content"`
+}
+
+type DeepSeekRequest struct {
+	Model    string            `json:"model"`
+	Messages []DeepSeekMessage `json:"messages"`
+}
+
+type DeepSeekMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type DeepSeekResponse struct {
+	Choices []DeepSeekChoice `json:"choices"`
+}
+
+type DeepSeekChoice struct {
+	Message DeepSeekMessage `json:"message"`
+}
+
 func summarizeWithGeminiText(apiKey, context, query string) (string, error) {
 	if apiKey == "" {
-		return "", fmt.Errorf("ไม่มี Gemini API Key")
+		return "", fmt.Errorf("GEMINI_API_KEY not configured")
 	}
 
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=%s", apiKey)
-
-	prompt := fmt.Sprintf(`กรุณาสรุปข้อมูลต่อไปนี้ที่เกี่ยวข้องกับคำถาม: "%s"
+	prompt := fmt.Sprintf(`???????????????????????????????: %s
 
 %s
 
-กรุณาสรุปเป็นภาษาไทยอย่างกระชับและตรงประเด็น`, query, context)
+????????????? ????? ????????:`, query, context)
 
-	reqBody := map[string]interface{}{
-		"contents": []map[string]interface{}{
+	reqBody := GeminiRequest{
+		Contents: []GeminiContent{
 			{
-				"parts": []map[string]string{
-					{"text": prompt},
+				Parts: []GeminiPart{
+					{Text: prompt},
 				},
 			},
 		},
 	}
 
-	jsonData, _ := json.Marshal(reqBody)
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=%s", apiKey)
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", err
@@ -41,53 +81,52 @@ func summarizeWithGeminiText(apiKey, context, query string) (string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("Gemini API error: %s", string(body))
+		return "", fmt.Errorf("gemini API error: %s", string(body))
 	}
 
-	var result struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var geminiResp GeminiResponse
+	if err := json.NewDecoder(resp.Body).Decode(&geminiResp); err != nil {
 		return "", err
 	}
 
-	if len(result.Candidates) > 0 && len(result.Candidates[0].Content.Parts) > 0 {
-		return result.Candidates[0].Content.Parts[0].Text, nil
+	if len(geminiResp.Candidates) > 0 && len(geminiResp.Candidates[0].Content.Parts) > 0 {
+		return geminiResp.Candidates[0].Content.Parts[0].Text, nil
 	}
 
-	return "", fmt.Errorf("ไม่มีข้อมูลจาก Gemini")
+	return "", fmt.Errorf("no response from Gemini")
 }
 
-// DeepSeek API  
 func summarizeWithDeepSeekText(apiKey, context, query string) (string, error) {
 	if apiKey == "" {
-		return "", fmt.Errorf("ไม่มี DeepSeek API Key")
+		return "", fmt.Errorf("DEEPSEEK_API_KEY not configured")
 	}
 
-	url := "https://api.deepseek.com/chat/completions"
-
-	prompt := fmt.Sprintf(`กรุณาสรุปข้อมูลต่อไปนี้ที่เกี่ยวข้องกับคำถาม: "%s"
+	prompt := fmt.Sprintf(`????????????????????????????????????????????: %s
 
 %s
 
-กรุณาสรุปเป็นภาษาไทยอย่างกระชับและตรงประเด็น`, query, context)
+??????????????? ?????? ?????????:`, query, context)
 
-	reqBody := map[string]interface{}{
-		"model": "deepseek-chat",
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
+	reqBody := DeepSeekRequest{
+		Model: "deepseek-chat",
+		Messages: []DeepSeekMessage{
+			{
+				Role:    "user",
+				Content: prompt,
+			},
 		},
 	}
 
-	jsonData, _ := json.Marshal(reqBody)
-	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	jsonData, err := json.Marshal(reqBody)
+	if err != nil {
+		return "", err
+	}
+
+	req, err := http.NewRequest("POST", "https://api.deepseek.com/v1/chat/completions", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", err
+	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
@@ -100,24 +139,17 @@ func summarizeWithDeepSeekText(apiKey, context, query string) (string, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("DeepSeek API error: %s", string(body))
+		return "", fmt.Errorf("deepseek API error: %s", string(body))
 	}
 
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	var deepseekResp DeepSeekResponse
+	if err := json.NewDecoder(resp.Body).Decode(&deepseekResp); err != nil {
 		return "", err
 	}
 
-	if len(result.Choices) > 0 {
-		return result.Choices[0].Message.Content, nil
+	if len(deepseekResp.Choices) > 0 {
+		return deepseekResp.Choices[0].Message.Content, nil
 	}
 
-	return "", fmt.Errorf("ไม่มีข้อมูลจาก DeepSeek")
+	return "", fmt.Errorf("no response from DeepSeek")
 }
