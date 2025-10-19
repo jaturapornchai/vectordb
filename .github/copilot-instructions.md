@@ -5,7 +5,7 @@ This is a Go application that connects to PostgreSQL with pgvector extension for
 ## Project Structure
 - Go application with PostgreSQL and pgvector integration
 - Docker Compose setup for local development
-- Ollama integration for embedding generation using Qwen3-Embedding-8B model
+- Ollama integration for embedding generation using BGE-M3 model
 - Environment-based configuration
 
 ## Development Guidelines

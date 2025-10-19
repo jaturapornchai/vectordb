@@ -1,0 +1,4 @@
+# GitHub Copilot ignore file
+# Ignore spec folder and all its contents
+spec/
+spec/**
